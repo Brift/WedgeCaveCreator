@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>Hexwars Wedge Element</title>
+		<style>
+			html, body 
+			{
+				width: 100%;
+				height: 100%;
+			}
+
+			body 
+			{
+				background-color: #ffffff;
+				margin: 0;
+				overflow: hidden;
+				font-family: arial;
+			}
+
+			#blocker 
+			{
+
+				position: absolute;
+
+				width: 100%;
+				height: 100%;
+
+				background-color: rgba(0,0,0,0.5);
+
+			}
+
+			#instructions 
+			{
+
+				width: 100%;
+				height: 100%;
+
+				display: -webkit-box;
+				display: -moz-box;
+				display: box;
+
+				-webkit-box-orient: horizontal;
+				-moz-box-orient: horizontal;
+				box-orient: horizontal;
+
+				-webkit-box-pack: center;
+				-moz-box-pack: center;
+				box-pack: center;
+
+				-webkit-box-align: center;
+				-moz-box-align: center;
+				box-align: center;
+
+				color: #ffffff;
+				text-align: center;
+
+				cursor: pointer;
+
+			}
+
+		</style>
+	</head>
+	<body>
+		<script src="three.js-master/build/three.min.js"></script>
+		<script src="three.js-master/examples/js/controls/PointerLockControls.js"></script>
+
+		<div id="blocker">
+
+			<div id="instructions">
+				<span style="font-size:40px">Click to play</span>
+				<br />
+				(W, A, S, D = Move, SPACE = Jump, MOUSE = Look around)
+			</div>
+
+		</div>
+
+		<script>
+
+			var camera, scene, renderer;
+			var geometry, material, mesh, floor, sphere, cube;
+			var mergedGeo;
+			var controls,time = Date.now();
+
+			var objects = [];
+			var points = [];
+			var depth = (Math.sqrt(3)/2);
+						
+			var isCtrlDown = false, isShiftDown = false;
+			
+			var countupstart = 0, countdown = 50, countup;
+			
+			var projector, ray, cameraray, cameraRayIntersector;
+			var blocker = document.getElementById( 'blocker' );
+			var instructions = document.getElementById( 'instructions' );
+			
+			var blocks = new Array(51);
+			//This set of for loops establishes the array from which the block data will be referenced
+			for (var z=0; z < 51; z++)
+			{
+				blocks[z] = new Array(21);
+				for (var y = 0; y < 21; y++)
+				{
+					blocks[z][y] = new Array(103);
+					countup = countupstart;
+				    for (var x = 0; x < 103; x++)
+					{
+						blocks[z][y][x] = new Array(2);
+						for (var t = 0; t < 2; t++) // t stands for the triblock, 0 is zneg, 1 is zpos
+						{
+							//This is necessary for the first wall to show up
+							if (z == 0)
+							{
+								blocks[z][y][x][t]= false;
+							}
+							// This else makes the wall smooth on the z=1 side
+							else if( z == 1 && t == 1) 
+							{
+								blocks[z][y][x][t]= false;
+							}
+							//This else makes the triangle part of the x possible
+							else if( x < (countupstart * 2) || x > (countdown * 2))
+							{
+								blocks[z][y][x][t]= false;
+							}
+							// This else creates a couple little hallways for demonstrations
+							else if( y > 1 && y < 8 && x > ((countupstart * 2) + 16) && x < ((countupstart * 2) + 25))
+							{
+								blocks[z][y][x][t]= false;
+							}
+							// This else if will show stairs
+							else if( y > (countupstart * 2) && y < ((countupstart * 2) + 5) && x == ((countupstart * 2) + 25) && z > 0 && z < 20)
+							{
+								blocks[z][y][x][t]= false;
+							}
+							//This else put a roof on it
+							else if( y > 19 )
+							{
+								blocks[z][y][x][t]= false;
+							}
+							else if( x > ((countupstart * 2) + 15) && x < ((countdown * 2) - 10) && z > 30 || (z == 30 && t == 0 && x > ((countupstart * 2) + 15) && x < ((countdown * 2) - 10) ) )
+							{
+							    blocks[z][y][x][t]= false;
+							}
+							else
+							{
+								blocks[z][y][x][t]= true;
+							}
+						}
+						countup ++;
+					}
+				}
+				countupstart = countupstart + .5;
+				countdown = countdown - .5;
+			}
+
+			// http://www.html5rocks.com/en/tutorials/pointerlock/intro/
+
+			var havePointerLock = 'pointerLockElement' in document || 'mozPointerLockElement' in document || 'webkitPointerLockElement' in document;
+
+			if ( havePointerLock ) 
+			{
+
+				var element = document.body;
+
+				var pointerlockchange = function ( event ) 
+				{
+
+					if ( document.pointerLockElement === element || document.mozPointerLockElement === element || document.webkitPointerLockElement === element ) 
+					{
+
+						controls.enabled = true;
+
+						blocker.style.display = 'none';
+
+					} 
+					else 
+					{
+
+						controls.enabled = false;
+
+						blocker.style.display = '-webkit-box';
+						blocker.style.display = '-moz-box';
+						blocker.style.display = 'box';
+
+						instructions.style.display = '';
+
+					}
+
+				}
+
+				var pointerlockerror = function ( event ) 
+				{
+
+					instructions.style.display = '';
+
+				}
+
+				// Hook pointer lock state change events
+				document.addEventListener( 'pointerlockchange', pointerlockchange, false );
+				document.addEventListener( 'mozpointerlockchange', pointerlockchange, false );
+				document.addEventListener( 'webkitpointerlockchange', pointerlockchange, false );
+
+				document.addEventListener( 'pointerlockerror', pointerlockerror, false );
+				document.addEventListener( 'mozpointerlockerror', pointerlockerror, false );
+				document.addEventListener( 'webkitpointerlockerror', pointerlockerror, false );
+
+				instructions.addEventListener( 'click', function ( event ) 
+				{
+
+					instructions.style.display = 'none';
+
+					// Ask the browser to lock the pointer
+					element.requestPointerLock = element.requestPointerLock || element.mozRequestPointerLock || element.webkitRequestPointerLock;
+
+					if ( /Firefox/i.test( navigator.userAgent ) ) 
+					{
+
+						var fullscreenchange = function ( event ) 
+						{
+
+							if ( document.fullscreenElement === element || document.mozFullscreenElement === element || document.mozFullScreenElement === element ) 
+							{
+
+								document.removeEventListener( 'fullscreenchange', fullscreenchange );
+								document.removeEventListener( 'mozfullscreenchange', fullscreenchange );
+
+								element.requestPointerLock();
+							}
+
+						}
+
+						document.addEventListener( 'fullscreenchange', fullscreenchange, false );
+						document.addEventListener( 'mozfullscreenchange', fullscreenchange, false );
+
+						element.requestFullscreen = element.requestFullscreen || element.mozRequestFullscreen || element.mozRequestFullScreen || element.webkitRequestFullscreen;
+
+						element.requestFullscreen();
+
+					} 
+					else 
+					{
+
+						element.requestPointerLock();
+
+					}
+
+				}, false );
+
+			} 
+			else 
+			{
+
+				instructions.innerHTML = 'Your browser doesn\'t seem to support Pointer Lock API <br /> I highly recommend getting <a href="https://www.google.com/intl/en/chrome/browser/">Chrome</a>';
+
+			}
+
+			init();
+			animate();
+
+			function init() 
+			{
+
+				camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 1000 );
+
+				scene = new THREE.Scene();
+				scene.fog = new THREE.Fog( 0xffffff, 0, 750 );
+
+				//These are the lights
+				var light = new THREE.DirectionalLight( 0xffffff, 1.5 );
+				light.position.set( 1, 1, 1 );
+				scene.add( light );
+				
+				var ambientLight = new THREE.AmbientLight( 0x606060 );
+				scene.add( ambientLight );
+
+				var light = new THREE.DirectionalLight( 0xffffff, 0.75 );
+				light.position.set( -1, - 0.5, -1 );
+				scene.add( light );
+				
+				
+				//This is used to determine where the camera is looking
+				projector = new THREE.Projector();
+
+				controls = new THREE.PointerLockControls( camera );
+				scene.add( controls.getObject() );
+
+				ray = new THREE.Raycaster();
+				ray.ray.direction.set( 0, -1, 0 );
+				
+				cameraray = new THREE.Raycaster();
+				cameraray.ray.direction.set(0,0,-1);
+
+				// floor
+				
+				geometry = new THREE.PlaneGeometry( 2000, 2000, 10, 10);
+				geometry.applyMatrix( new THREE.Matrix4().makeRotationX( -Math.PI / 2 ) );
+
+				for ( var i = 0, l = geometry.faces.length; i < l; i ++ ) 
+				{
+
+					var face = geometry.faces[ i ];
+					face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.1 + 0.3, Math.random() * 0.5, 1 );
+					face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.1 + 0.3, Math.random() * 0.5, 1 );
+					face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.1 + 0.3, Math.random() * 0.5, 1 );
+					face.vertexColors[ 3 ] = new THREE.Color().setHSV( Math.random() * 0.1 + 0.3, Math.random() * 0.5, 1 );
+
+				}
+
+				material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+				floor = new THREE.Mesh( geometry, material );
+				floor.position.y = 4;
+				scene.add( floor );
+
+				//Objects
+				
+				
+				geometry = new THREE.CubeGeometry( 10, 10, 10);
+				
+				for ( var i = 0; i < geometry.faces.length; i ++ ) 
+				{
+					geometry.faces[ i ].color.setHex( 0x00aa80 );
+				}
+
+				material = new THREE.MeshPhongMaterial({ vertexColors: THREE.FaceColors }  );
+
+				cube = new THREE.Mesh( geometry, material );
+				cube.position.y = 10;
+				cube.position.x = -50;
+				cube.position.z = 100;
+				scene.add( cube );
+				
+				refactor();
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				document.body.appendChild( renderer.domElement );
+
+				document.addEventListener( 'keydown', onDocumentKeyDown, false );
+				document.addEventListener( 'keyup', onDocumentKeyUp, false );
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+			
+			function onDocumentKeyDown( event ) {
+
+				switch( event.keyCode ) {
+
+					case 16: isShiftDown = true; break;
+					case 17: isCtrlDown = true; break;
+
+				}
+
+			}
+			
+			function onDocumentKeyUp( event ) {
+
+				switch( event.keyCode ) {
+
+					case 16: isShiftDown = false; break;
+					case 17: isCtrlDown = false; break;
+
+				}
+			}
+
+			function onWindowResize() 
+			{
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function animate() 
+			{
+
+				requestAnimationFrame( animate );
+
+				//
+
+				controls.isOnObject( false );
+
+				ray.ray.origin.copy( controls.getObject().position );
+				ray.ray.origin.y -= 10;
+				
+				cameraray.ray.origin.copy( controls.getObject().position );
+				cameraray.ray.direction.copy( controls.getObject().rotation );
+
+				var intersections = ray.intersectObjects( objects );
+
+				if ( intersections.length > 0 ) 
+				{
+
+					var distance = intersections[ 0 ].distance;
+
+					if ( distance > 0 && distance < 50 ) {
+
+						controls.isOnObject( true );
+
+					}
+
+				}
+				
+				var cameraIntersections = cameraray.intersectObjects( objects );
+				
+				/*
+				if( cameraIntersections.length > 0 )
+				{
+					//cameraRayIntersector = getRealIntersector( cameraIntersections )
+					//info.innerHTML += "Found @ distance " + cameraIntersections.distance.toFixed(2);
+					//cameraIntersections.mesh.materials[0].color.setHex( 0xaa0000 );
+					
+				}
+				else
+				{
+					info.innerHTML += "No Intersection"
+					cube.materials[0].color.setHex ( 0x326685 );
+					sphere.materials[0].color.setHex ( 0x00ff80 );
+				}
+				*/
+				controls.update( Date.now() - time );
+
+				renderer.render( scene, camera );
+
+				time = Date.now();
+
+			}
+			
+			function getRealIntersector( intersects ) {
+
+				for( i = 0; i < intersects.length; i++ ) {
+
+					cameraRayIntersector = intersects[ i ];
+
+					if ( cameraRayIntersector.object != floor ) {
+
+						return cameraRayIntersector;
+
+					}
+
+				}
+
+				return null;
+
+			}
+			
+			function refactor ()
+			{
+						
+				var countupstart = 1, countdown = 50, countup;
+				
+				// This set of for loops will create the relationships between neighboring blocks
+				for ( var z = 1; z < 50; z++ ) 
+				{ // This represents the z element of the block
+				    for ( var y = 1; y < 20 ; y++) 
+					{ //This represents the y element of the block
+						countup = countupstart; // This is for the x element so it tapers as it moves
+						while ( countup < countdown )
+						{
+							// Ok I know this looks like a mess, but what we have here is a huge array of arrays
+							//This set deals with all of the z negative triblocks and their neighbors
+							/*I'm keeping these here as reference
+							blocks[z][y][countup*2][0][1].top = blocks[z][y+1][countup*2][0][0];
+							blocks[z][y][countup*2][0][1].bottom  = blocks[z][y-1][countup*2][0][0];
+							blocks[z][y][(countup*2)][0][1].side1 = blocks[z+1][y][(countup*2)+1][1][0];
+							blocks[z][y][(countup*2)][0][1].side2 = blocks[z+1][y][(countup*2)-1][1][0];
+							blocks[z][y][(countup*2)][0][1].side3 = blocks[z][y][(countup*2)][1][0];
+							
+							//This set deals with all of the z positive triblocks and their neighbors
+							blocks[z][y][countup*2][1][1].top = blocks[z][y+1][countup*2][1][0];
+							blocks[z][y][countup*2][1][1].bottom  = blocks[z][y-1][countup*2][1][0];
+							blocks[z][y][(countup*2)][1][1].side1 = blocks[z][y][countup*2][0][0];
+							blocks[z][y][(countup*2)][1][1].side2 = blocks[z-1][y][(countup*2)-1][0][0];
+							blocks[z][y][(countup*2)][1][1].side3 = blocks[z-1][y][(countup*2)+1][0][0];
+							*/
+							if(blocks[z][y][countup*2][0] == true && blocks[z][y+1][countup*2][0] == false)
+							{
+								//This is where we draw the top face of this triblock if the upper neighbor is empty
+								var geometry = new THREE.Geometry();
+								var tv1 = new THREE.Vector3(0,0,0);
+								var tv2 = new THREE.Vector3(4,0,0);
+								var tv3 = new THREE.Vector3(2,0,-4*depth);
+								
+								geometry.vertices.push(tv1);
+								geometry.vertices.push(tv2);
+								geometry.vertices.push(tv3);
+								
+								geometry.faces.push(new THREE.Face3(0,1,2));
+								
+								var face = geometry.faces[ 0 ];
+								face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								
+								material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+								mesh = new THREE.Mesh( geometry, material );
+								mesh.position.x = countup * 4;
+								mesh.position.y = (y + 1) * 4;
+								mesh.position.z = z * (-4 * depth);
+								
+								scene.add( mesh );
+								material.color.setHSV( Math.random() * 0.4 , Math.random() * 0.5, 1 );
+	
+								objects.push( mesh );
+							}
+							
+							if(blocks[z][y][countup*2][0] == true && blocks[z][y-1][countup*2][0] == false)
+							{
+								var geometry = new THREE.Geometry();
+								var tv1 = new THREE.Vector3(0,0,0);
+								var tv2 = new THREE.Vector3(4,0,0);
+								var tv3 = new THREE.Vector3(2,0,-4*depth);
+								
+								geometry.vertices.push(tv1);
+								geometry.vertices.push(tv2);
+								geometry.vertices.push(tv3);
+								
+								geometry.faces.push(new THREE.Face3(0,2,1));
+								
+								var face = geometry.faces[ 0 ];
+								face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								
+								material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+								var mesh = new THREE.Mesh( geometry, material );
+								mesh.position.x = countup * 4;
+								mesh.position.y = (y) * 4;
+								mesh.position.z = z * (-4 * depth);
+								scene.add( mesh );
+								material.color.setHSV( Math.random() * 0.4, Math.random() * 0.5, 1 );
+	
+								objects.push( mesh );
+							}
+							
+							
+							// This set will make side1 for all blocks that are filled and have empty neighbors
+							if(blocks[z][y][countup*2][0] == true && blocks[z+1][y][(countup*2)+1][1] == false)
+							{
+								//document.writeln('test '+blocks[z][y][countup*2][0][0]+ ' <br />');
+								var geometry = new THREE.Geometry();
+								var v1 = new THREE.Vector3(4,0,0);
+								var v2 = new THREE.Vector3(2,0,-4*depth);
+								var v3 = new THREE.Vector3(2,4,-4*depth);
+								var v4 = new THREE.Vector3(4,4,0);
+								
+								geometry.vertices.push(v1);
+								geometry.vertices.push(v2);
+								geometry.vertices.push(v3);
+								geometry.vertices.push(v4);
+								
+								geometry.faces.push(new THREE.Face4(0,1,2,3));
+								
+								var face = geometry.faces[ 0 ];
+								face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 3 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								
+								material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+								var mesh = new THREE.Mesh( geometry, material );
+								mesh.position.x = countup * 4;
+								mesh.position.y = (y) * 4;
+								mesh.position.z = z * (-4 * depth);
+								scene.add( mesh );
+								material.color.setHSV( Math.random() * 0.4, Math.random() * 0.5, 1 );
+	
+								objects.push( mesh );
+							}
+							
+							// This set will make side2 for all blocks that are filled and have empty neighbors
+							if(blocks[z][y][countup*2][0] == true && blocks[z+1][y][(countup*2)-1][1] == false)
+							{
+								//document.writeln('test '+blocks[z][y][countup*2][0][0]+ ' <br />');
+								var geometry = new THREE.Geometry();
+								var v1 = new THREE.Vector3(0,0,0);
+								var v2 = new THREE.Vector3(0,4,0);
+								var v3 = new THREE.Vector3(2,4,-4*depth);
+								var v4 = new THREE.Vector3(2,0,-4*depth);
+								
+								geometry.vertices.push(v1);
+								geometry.vertices.push(v2);
+								geometry.vertices.push(v3);
+								geometry.vertices.push(v4);
+								
+								geometry.faces.push(new THREE.Face4(0,1,2,3));
+								
+								var face = geometry.faces[ 0 ];
+								face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 3 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								
+								material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+								var mesh = new THREE.Mesh( geometry, material );
+								mesh.position.x = countup * 4;
+								mesh.position.y = (y) * 4;
+								mesh.position.z = z * (-4 * depth);
+								scene.add( mesh );
+								material.color.setHSV( Math.random() * 0.4, Math.random() * 0.5, 1 );
+	
+								objects.push( mesh );
+							}
+							
+							// This set will make side3 for all blocks that are filled and have empty neighbors
+							if(blocks[z][y][countup*2][0] == true && blocks[z][y][(countup*2)][1] == false)
+							{
+								//document.writeln('test '+blocks[z][y][countup*2][0][0]+ ' <br />');
+								var geometry = new THREE.Geometry();
+								var v1 = new THREE.Vector3(0,0,0);
+								var v2 = new THREE.Vector3(4,0,0);
+								var v3 = new THREE.Vector3(4,4,0);
+								var v4 = new THREE.Vector3(0,4,0);
+								
+								geometry.vertices.push(v1);
+								geometry.vertices.push(v2);
+								geometry.vertices.push(v3);
+								geometry.vertices.push(v4);
+								
+								geometry.faces.push(new THREE.Face4(0,1,2,3));
+								
+								var face = geometry.faces[ 0 ];
+								face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 3 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								
+								material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+								var mesh = new THREE.Mesh( geometry, material );
+								mesh.position.x = countup * 4;
+								mesh.position.y = (y) * 4;
+								mesh.position.z = z * (-4 * depth);
+								scene.add( mesh );
+								material.color.setHSV( Math.random() * 0.4, Math.random() * 0.5, 1 );
+	
+								objects.push( mesh );
+							}
+							
+							//This is where we draw the top face of this triblock if the upper neighbor is empty
+							if(blocks[z][y][countup*2][1] == true && blocks[z][y+1][countup*2][1] == false)
+							{
+								//This is where we draw the top face of this triblock if the upper neighbor is empty
+								var geometry = new THREE.Geometry();
+								var v1 = new THREE.Vector3(0,0,0);
+								var v2 = new THREE.Vector3(2,0,4*depth);
+								var v3 = new THREE.Vector3(4,0,0);
+								
+								geometry.vertices.push(v1);
+								geometry.vertices.push(v2);
+								geometry.vertices.push(v3);
+								
+								geometry.faces.push(new THREE.Face3(0,1,2));
+								
+								var face = geometry.faces[ 0 ];
+								face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								
+								material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+								mesh = new THREE.Mesh( geometry, material );
+								mesh.position.x = countup * 4;
+								mesh.position.y = (y + 1) * 4;
+								mesh.position.z = z * (-4 * depth);
+								scene.add( mesh );
+								material.color.setHSV( Math.random() * 0.4 , Math.random() * 0.5, 1 );
+	
+								objects.push( mesh );
+							}
+							// This will draw the bottom block for the down triblock
+							if(blocks[z][y][countup*2][1] == true && blocks[z][y-1][countup*2][1] == false)
+							{
+								var geometry = new THREE.Geometry();
+								var v1 = new THREE.Vector3(0,0,0);
+								var v2 = new THREE.Vector3(4,0,0);
+								var v3 = new THREE.Vector3(2,0,4*depth);
+								
+								geometry.vertices.push(v1);
+								geometry.vertices.push(v2);
+								geometry.vertices.push(v3);
+								
+								geometry.faces.push(new THREE.Face3(0,1,2));
+								
+								var face = geometry.faces[ 0 ];
+								face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								
+								material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+								var mesh = new THREE.Mesh( geometry, material );
+								mesh.position.x = countup * 4;
+								mesh.position.y = (y) * 4;
+								mesh.position.z = z * (-4 * depth);
+								scene.add( mesh );
+								material.color.setHSV( Math.random() * 0.4, Math.random() * 0.5, 1 );
+	
+								objects.push( mesh );
+							}
+							
+							
+							// This set will make side1 for all blocks that are filled and have empty neighbors
+							if(blocks[z][y][countup*2][1] == true && blocks[z][y][countup*2][0] == false)
+							{
+								//document.writeln('test '+blocks[z][y][countup*2][0][0]+ ' <br />');
+								var geometry = new THREE.Geometry();
+								var v1 = new THREE.Vector3(0,0,0);
+								var v2 = new THREE.Vector3(0,4,0);
+								var v3 = new THREE.Vector3(4,4,0);
+								var v4 = new THREE.Vector3(4,0,0);					
+								
+								geometry.vertices.push(v1);
+								geometry.vertices.push(v2);
+								geometry.vertices.push(v3);
+								geometry.vertices.push(v4);
+								
+								geometry.faces.push(new THREE.Face4(0,1,2,3));
+								
+								var face = geometry.faces[ 0 ];
+								face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 3 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								
+								material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+								var mesh = new THREE.Mesh( geometry, material );
+								mesh.position.x = countup * 4;
+								mesh.position.y = (y) * 4;
+								mesh.position.z = z * (-4 * depth);
+								scene.add( mesh );
+								material.color.setHSV( Math.random() * 0.4, Math.random() * 0.5, 1 );
+	
+								objects.push( mesh );
+							}
+							
+							// This set will make side2 for all blocks that are filled and have empty neighbors
+							if(blocks[z][y][countup*2][1] == true && blocks[z-1][y][(countup*2)-1][0] == false)
+							{
+								//document.writeln('test '+blocks[z][y][countup*2][0][0]+ ' <br />');
+								var geometry = new THREE.Geometry();
+								var v1 = new THREE.Vector3(0,0,0);
+								var v2 = new THREE.Vector3(2,0,4*depth);
+								var v3 = new THREE.Vector3(2,4,4*depth);
+								var v4 = new THREE.Vector3(0,4,0);
+								
+								
+								geometry.vertices.push(v1);
+								geometry.vertices.push(v2);
+								geometry.vertices.push(v3);
+								geometry.vertices.push(v4);
+								
+								geometry.faces.push(new THREE.Face4(0,1,2,3));
+								
+								var face = geometry.faces[ 0 ];
+								face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 3 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								
+								material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+								var mesh = new THREE.Mesh( geometry, material );
+								mesh.position.x = countup * 4;
+								mesh.position.y = (y) * 4;
+								mesh.position.z = z * (-4 * depth);
+								scene.add( mesh );
+								material.color.setHSV( Math.random() * 0.4, Math.random() * 0.5, 1 );
+	
+								objects.push( mesh );
+							}
+							
+							// This set will make side3 for all blocks that are filled and have empty neighbors
+							if(blocks[z][y][countup*2][1] == true && blocks[z-1][y][(countup*2)+1][0] == false)
+							{
+								//document.writeln('test '+blocks[z][y][countup*2][0][0]+ ' <br />');
+								var geometry = new THREE.Geometry();
+								var v1 = new THREE.Vector3(4,0,0);
+								var v2 = new THREE.Vector3(4,4,0);								
+								var v3 = new THREE.Vector3(2,4,4*depth);
+								var v4 = new THREE.Vector3(2,0,4*depth);
+								
+								
+								geometry.vertices.push(v1);
+								geometry.vertices.push(v2);
+								geometry.vertices.push(v3);
+								geometry.vertices.push(v4);
+								
+								geometry.faces.push(new THREE.Face4(0,1,2,3));
+								
+								var face = geometry.faces[ 0 ];
+								face.vertexColors[ 0 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 1 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 2 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								face.vertexColors[ 3 ] = new THREE.Color().setHSV( Math.random() * 0.2 + 0.2, Math.random() * 0.5, 1 );
+								
+								material = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } );
+
+								var mesh = new THREE.Mesh( geometry, material );
+								mesh.position.x = countup * 4;
+								mesh.position.y = (y) * 4;
+								mesh.position.z = z * (-4 * depth);
+								scene.add( mesh );
+								material.color.setHSV( Math.random() * 0.4, Math.random() * 0.5, 1 );
+	
+								objects.push( mesh );
+							}
+							countup ++;
+						}
+					}
+					countupstart = countupstart + .5;
+					countdown = countdown - .5;
+				}
+			}
+			
+		</script>
+	</body>
+</html>
