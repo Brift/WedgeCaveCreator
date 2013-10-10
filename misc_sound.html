@@ -36,7 +36,7 @@
 			music by <a href="https://soundcloud.com/d12har" target="_blank">David Hardee</a> and
 			<br/><br/>
 			This webpage is only viewable in <a href="https://www.google.com/intl/en/chrome/browser/" target="_blank">Chrome</a>
-
+			</br>
 			navigate with WASD / arrows / mouse
 		</div>
 
@@ -62,7 +62,7 @@
 			
 			var context;
 			var bufferLoader;
-			var sound1;
+			var sound1 = {};
 
 			var clock = new THREE.Clock();
 						
@@ -115,21 +115,21 @@
 				sound1.source.loop = true;
 				
 				var request = new XMLHttpRequest();
-				request.open("GET", Flight.ogg , true);
+				request.open("GET", Flight , true);
 				request.responseType = "arraybuffer";
-				request.onload = function(e) 
+				/*request.onload = function(e) 
 				{
 
 					// Create a buffer from the response ArrayBuffer.
-					var buffer = ctx.createBuffer(this.response, false);
-					sound.buffer = buffer;
+					var buffer = context.createBuffer(this.response, false);
+					sound1.buffer = buffer;
 
 					// Make the sound source use the buffer and start playing it.
 					sound1.source.buffer = sound.buffer;
-					sound1.source.start(ctx.currentTime);
+					sound1.source.start(context.currentTime);
 				};
 				request.send();
-
+				*/
 				var sphere = new THREE.SphereGeometry( 20, 32, 16 );
 
 				material_sphere1 = new THREE.MeshLambertMaterial( { color: 0xffaa00, shading: THREE.FlatShading } );
